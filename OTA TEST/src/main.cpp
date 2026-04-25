@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // VERSION (CHANGE EVERY BUILD)
-const char* currentVersion = "1.0.2";
+const char* currentVersion = "1.0.3";
 
 // GitHub
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
