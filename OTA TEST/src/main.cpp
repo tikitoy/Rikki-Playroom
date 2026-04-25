@@ -11,19 +11,27 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.1.0";
+const char* currentVersion = "1.1.1";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
 const char* versionURL  = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/version.txt";
 
-const int led = 2;
+const int led = 27;
 unsigned long previousMillis = 0;
 const long interval = 4000;
-int ledState = LOW;
+int ledState = 0;
+
+#define LED_ON HIGH
+#define LED_OFF LOW
+
+String ledStatus = "BLINK";
 
 bool ledManualMode = false;
-String ledStatus = "BLINK";
+
+
+
+
 
 WebServer server(80);
 
@@ -33,19 +41,30 @@ int otaProgress = 0;
 String latestVersionGlobal = "Unknown";
 bool updateAvailableGlobal = false;
 
+
 const char* loginIndex =
-"<form name='loginForm'>"
-"<table width='20%' bgcolor='A09F9F' align='center'>"
-"<tr><td colspan=2><center><font size=4><b>ESP32 Login Page</b></font></center><br></td></tr>"
-"<tr><td>Username:</td><td><input type='text' size=25 name='userid'><br></td></tr>"
-"<tr><td>Password:</td><td><input type='Password' size=25 name='pwd'><br></td></tr>"
-"<tr><td><input type='submit' onclick='check(this.form)' value='Login'></td></tr>"
-"</table>"
-"</form>"
+"<meta name='viewport' content='width=device-width, initial-scale=1'>"
+"<style>"
+"body{font-family:Arial;background:#f4f6f8;margin:0;padding:20px;}"
+".card{max-width:420px;margin:60px auto;background:white;padding:24px;border-radius:16px;box-shadow:0 2px 10px #bbb;}"
+"h2{text-align:center;margin-top:0;}"
+"input{width:100%;padding:14px;margin:8px 0 16px 0;font-size:18px;border:1px solid #ccc;border-radius:10px;box-sizing:border-box;}"
+"button{width:100%;padding:16px;font-size:18px;border:0;border-radius:12px;background:#1976d2;color:white;}"
+"</style>"
+
+"<div class='card'>"
+"<h2>ESP32 Login</h2>"
+"<input type='text' id='userid' placeholder='Username'>"
+"<input type='password' id='pwd' placeholder='Password'>"
+"<button onclick='checkLogin()'>Login</button>"
+"</div>"
+
 "<script>"
-"function check(form){"
-"if(form.userid.value=='admin' && form.pwd.value=='admin'){"
-"window.open('/serverIndex');"
+"function checkLogin(){"
+"var u=document.getElementById('userid').value;"
+"var p=document.getElementById('pwd').value;"
+"if(u=='admin' && p=='admin'){"
+"window.location.href='/serverIndex';"
 "}else{"
 "alert('Error Password or Username');"
 "}"
@@ -377,19 +396,18 @@ void setup(void) {
   });
 
    
-   
-  server.on("/otaStatus", HTTP_GET, []() {
-    String json = "{";
-    json += "\"status\":\"" + otaStatus + "\",";
-    json += "\"progress\":" + String(otaProgress) + ",";
-    json += "\"current\":\"" + String(currentVersion) + "\",";
-    json += "\"latest\":\"" + latestVersionGlobal + "\",";
-    json += "\"updateAvailable\":" + String(updateAvailableGlobal ? "true" : "false");
-    json += "\"led\":\"" + ledStatus + "\"";
-    json += "}";
+server.on("/otaStatus", HTTP_GET, []() {
+  String json = "{";
+  json += "\"status\":\"" + otaStatus + "\",";
+  json += "\"progress\":" + String(otaProgress) + ",";
+  json += "\"current\":\"" + String(currentVersion) + "\",";
+  json += "\"latest\":\"" + latestVersionGlobal + "\",";
+  json += "\"updateAvailable\":" + String(updateAvailableGlobal ? "true" : "false") + ",";
+  json += "\"led\":\"" + ledStatus + "\"";
+  json += "}";
 
-    server.send(200, "application/json", json);
-  });
+  server.send(200, "application/json", json);
+});
 
   server.on("/githubUpdate", HTTP_GET, []() {
     server.send(200, "text/plain", "Checking version...");
@@ -399,16 +417,16 @@ void setup(void) {
 
   server.on("/ledOn", HTTP_GET, []() {
   ledManualMode = true;
-  ledState = HIGH;
-  digitalWrite(led, HIGH);
+  ledState = LED_ON;
+  digitalWrite(led, LED_ON);
   ledStatus = "ON";
   server.send(200, "text/plain", "LED ON");
 });
 
 server.on("/ledOff", HTTP_GET, []() {
   ledManualMode = true;
-  ledState = LOW;
-  digitalWrite(led, LOW);
+  ledState = LED_OFF;
+  digitalWrite(led, LED_OFF);
   ledStatus = "OFF";
   server.send(200, "text/plain", "LED OFF");
 });
