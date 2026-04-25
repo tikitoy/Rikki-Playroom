@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.0.9";
+const char* currentVersion = "1.1.0";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
@@ -23,6 +23,7 @@ const long interval = 4000;
 int ledState = LOW;
 
 bool ledManualMode = false;
+String ledStatus = "BLINK";
 
 WebServer server(80);
 
@@ -51,46 +52,58 @@ const char* loginIndex =
 "}"
 "</script>";
 
+
 const char* serverIndex =
+"<meta name='viewport' content='width=device-width, initial-scale=1'>"
+"<style>"
+"body{font-family:Arial;background:#f4f6f8;margin:0;padding:16px;color:#222;}"
+".card{background:white;padding:18px;margin-bottom:16px;border-radius:14px;box-shadow:0 2px 8px #ccc;}"
+"h2,h3{margin-top:0;}"
+"button{width:100%;padding:16px;margin:8px 0;font-size:18px;border:0;border-radius:12px;background:#1976d2;color:white;}"
+"button.off{background:#d32f2f;}"
+"button.blink{background:#388e3c;}"
+"progress{width:100%;height:28px;}"
+"</style>"
+
+"<div class='card'>"
 "<h2>ESP32 Control Panel</h2>"
-
-"<hr>"
-"<h3>LED Control</h3>"
-"<button onclick=\"fetch('/ledOn')\">LED ON</button> "
-"<button onclick=\"fetch('/ledOff')\">LED OFF</button> "
-"<button onclick=\"fetch('/ledBlink')\">LED BLINK</button>"
-
-"<hr>"
-"<h3>ESP32 OTA Update</h3>"
 "<p>Current version: <b id='currentVer'>Loading...</b></p>"
 "<p>Latest version: <b id='latestVer'>Loading...</b></p>"
 "<p>Update: <b id='updateBadge'>Checking...</b></p>"
+"</div>"
 
+"<div class='card'>"
+"<h3>LED Control</h3>"
+"<button onclick='ledOn()'>LED ON</button>"
+"<button class='off' onclick='ledOff()'>LED OFF</button>"
+"<button class='blink' onclick='ledBlink()'>LED BLINK</button>"
+"<p>LED Status: <b id='ledStatus'>Unknown</b></p>"
+"</div>"
+
+"<div class='card'>"
+"<h3>GitHub OTA Update</h3>"
 "<button onclick='startOTA()'>Check Version and Update</button>"
 "<p>Status: <b id='status'>Idle</b></p>"
 "<p>Progress: <b id='progress'>0%</b></p>"
-"<progress id='bar' value='0' max='100' style='width:300px'></progress>"
+"<progress id='bar' value='0' max='100'></progress>"
+"</div>"
 
 "<script>"
 "function refreshStatus(){"
 "fetch('/otaStatus').then(r=>r.json()).then(d=>{"
-"document.getElementById('status').innerHTML=d.status;"
-"document.getElementById('progress').innerHTML=d.progress + '%';"
-"document.getElementById('bar').value=d.progress;"
-"document.getElementById('currentVer').innerHTML=d.current;"
-"document.getElementById('latestVer').innerHTML=d.latest;"
-"document.getElementById('updateBadge').innerHTML=d.updateAvailable ? 'AVAILABLE' : 'UP TO DATE';"
-"}).catch(e=>{"
-"document.getElementById('status').innerHTML='Status fetch failed';"
+"status.innerHTML=d.status;"
+"progress.innerHTML=d.progress+'%';"
+"bar.value=d.progress;"
+"currentVer.innerHTML=d.current;"
+"latestVer.innerHTML=d.latest;"
+"updateBadge.innerHTML=d.updateAvailable?'AVAILABLE':'UP TO DATE';"
+"ledStatus.innerHTML=d.led;"
 "});"
 "}"
-
-"function startOTA(){"
-"fetch('/githubUpdate').then(r=>r.text()).then(t=>{"
-"document.getElementById('status').innerHTML=t;"
-"});"
-"}"
-
+"function ledOn(){fetch('/ledOn').then(()=>refreshStatus());}"
+"function ledOff(){fetch('/ledOff').then(()=>refreshStatus());}"
+"function ledBlink(){fetch('/ledBlink').then(()=>refreshStatus());}"
+"function startOTA(){fetch('/githubUpdate').then(r=>r.text()).then(t=>{status.innerHTML=t;});}"
 "setInterval(refreshStatus,1000);"
 "refreshStatus();"
 "</script>";
@@ -363,6 +376,8 @@ void setup(void) {
     server.send(200, "text/html", serverIndex);
   });
 
+   
+   
   server.on("/otaStatus", HTTP_GET, []() {
     String json = "{";
     json += "\"status\":\"" + otaStatus + "\",";
@@ -370,6 +385,7 @@ void setup(void) {
     json += "\"current\":\"" + String(currentVersion) + "\",";
     json += "\"latest\":\"" + latestVersionGlobal + "\",";
     json += "\"updateAvailable\":" + String(updateAvailableGlobal ? "true" : "false");
+    json += "\"led\":\"" + ledStatus + "\"";
     json += "}";
 
     server.send(200, "application/json", json);
@@ -382,21 +398,28 @@ void setup(void) {
   });
 
   server.on("/ledOn", HTTP_GET, []() {
-    ledManualMode = true;
-    digitalWrite(led, HIGH);
-    server.send(200, "text/plain", "LED ON");
-  });
+  ledManualMode = true;
+  ledState = HIGH;
+  digitalWrite(led, HIGH);
+  ledStatus = "ON";
+  server.send(200, "text/plain", "LED ON");
+});
 
-  server.on("/ledOff", HTTP_GET, []() {
-    ledManualMode = true;
-    digitalWrite(led, LOW);
-    server.send(200, "text/plain", "LED OFF");
-  });
+server.on("/ledOff", HTTP_GET, []() {
+  ledManualMode = true;
+  ledState = LOW;
+  digitalWrite(led, LOW);
+  ledStatus = "OFF";
+  server.send(200, "text/plain", "LED OFF");
+});
 
-  server.on("/ledBlink", HTTP_GET, []() {
-    ledManualMode = false;
-    server.send(200, "text/plain", "LED BLINK");
-  });
+server.on("/ledBlink", HTTP_GET, []() {
+  ledManualMode = false;
+  ledStatus = "BLINK";
+  previousMillis = millis();
+  server.send(200, "text/plain", "LED BLINK");
+});
+
 
   server.begin();
 
