@@ -336,7 +336,7 @@ void setup(void) {
   delay(3000);
 
   // AUTO UPDATE ON BOOT
-  checkVersionAndUpdate();
+ // checkVersionAndUpdate();
 }
 
 void loop(void) {
