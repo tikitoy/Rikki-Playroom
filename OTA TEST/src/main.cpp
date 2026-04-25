@@ -19,7 +19,7 @@ const char* versionURL  = "https://raw.githubusercontent.com/tikitoy/Rikki-Playr
 
 const int led = 2;
 unsigned long previousMillis = 0;
-const long interval = 1000;
+const long interval = 4000;
 int ledState = LOW;
 
 WebServer server(80);
