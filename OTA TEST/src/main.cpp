@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
@@ -11,7 +10,12 @@ const char* host = "esp32";
 const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
+// CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
+const char* currentVersion = "1.0.0";
+
+// GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
+const char* versionURL  = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/version.txt";
 
 const int led = 2;
 unsigned long previousMillis = 0;
@@ -19,6 +23,9 @@ const long interval = 1000;
 int ledState = LOW;
 
 WebServer server(80);
+
+String otaStatus = "Idle";
+int otaProgress = 0;
 
 const char* loginIndex =
 "<form name='loginForm'>"
@@ -41,60 +48,105 @@ const char* loginIndex =
 
 const char* serverIndex =
 "<h2>ESP32 OTA Update</h2>"
-"<h3>Manual OTA Upload</h3>"
-"<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>"
-"<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
-"<input type='file' name='update'>"
-"<input type='submit' value='Upload Firmware'>"
-"</form>"
-"<div id='prg'>progress: 0%</div>"
-"<hr>"
+"<p>Current version: <b id='ver'>Loading...</b></p>"
+
 "<h3>GitHub OTA Update</h3>"
-"<button onclick=\"location.href='/githubUpdate'\">Update from GitHub</button>"
+"<button onclick='startOTA()'>Check Version and Update</button>"
+"<p>Status: <b id='status'>Idle</b></p>"
+"<p>Progress: <b id='progress'>0%</b></p>"
+"<progress id='bar' value='0' max='100' style='width:300px'></progress>"
+
 "<script>"
-"$('form').submit(function(e){"
-"e.preventDefault();"
-"var form = $('#upload_form')[0];"
-"var data = new FormData(form);"
-"$.ajax({"
-"url: '/update',"
-"type: 'POST',"
-"data: data,"
-"contentType: false,"
-"processData:false,"
-"xhr: function() {"
-"var xhr = new window.XMLHttpRequest();"
-"xhr.upload.addEventListener('progress', function(evt) {"
-"if (evt.lengthComputable) {"
-"var per = evt.loaded / evt.total;"
-"$('#prg').html('progress: ' + Math.round(per*100) + '%');"
-"}"
-"}, false);"
-"return xhr;"
-"},"
-"success:function(d, s) {"
-"$('#prg').html('Upload complete. Rebooting...');"
-"},"
-"error: function (a, b, c) {"
-"$('#prg').html('Upload failed');"
-"}"
+"function refreshStatus(){"
+"fetch('/otaStatus').then(r=>r.json()).then(d=>{"
+"document.getElementById('status').innerHTML=d.status;"
+"document.getElementById('progress').innerHTML=d.progress + '%';"
+"document.getElementById('bar').value=d.progress;"
+"document.getElementById('ver').innerHTML=d.version;"
 "});"
+"}"
+"function startOTA(){"
+"fetch('/githubUpdate').then(r=>r.text()).then(t=>{"
+"document.getElementById('status').innerHTML=t;"
 "});"
+"}"
+"setInterval(refreshStatus,1000);"
+"refreshStatus();"
 "</script>";
+
+WiFiClientSecure makeSecureClient() {
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(30000);
+  return client;
+}
+
+String getLatestVersion() {
+  WiFiClientSecure client = makeSecureClient();
+  HTTPClient http;
+
+  http.setTimeout(30000);
+  http.setConnectTimeout(30000);
+  http.setReuse(false);
+
+  if (!http.begin(client, versionURL)) {
+    Serial.println("Version HTTP begin failed");
+    return "";
+  }
+
+  http.addHeader("User-Agent", "ESP32");
+
+  int httpCode = http.GET();
+  Serial.printf("Version HTTP Code: %d\n", httpCode);
+
+  if (httpCode != HTTP_CODE_OK) {
+    http.end();
+    return "";
+  }
+
+  String latestVersion = http.getString();
+  latestVersion.trim();
+
+  http.end();
+  return latestVersion;
+}
+
+bool isNewVersionAvailable() {
+  String latestVersion = getLatestVersion();
+
+  if (latestVersion == "") {
+    otaStatus = "Failed to check version";
+    return false;
+  }
+
+  Serial.print("Current version: ");
+  Serial.println(currentVersion);
+  Serial.print("Latest version: ");
+  Serial.println(latestVersion);
+
+  if (latestVersion != String(currentVersion)) {
+    otaStatus = "New version found: " + latestVersion;
+    return true;
+  }
+
+  otaStatus = "Already latest version";
+  return false;
+}
 
 void updateFromGitHub() {
   Serial.println("Starting GitHub OTA...");
+  otaStatus = "Starting OTA";
+  otaProgress = 0;
 
   if (WiFi.status() != WL_CONNECTED) {
+    otaStatus = "WiFi not connected";
     Serial.println("WiFi not connected");
     return;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(30000);
-
+  WiFiClientSecure client = makeSecureClient();
   HTTPClient http;
+
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setTimeout(30000);
   http.setConnectTimeout(30000);
@@ -102,8 +154,10 @@ void updateFromGitHub() {
 
   Serial.println("Connecting to firmware URL...");
   Serial.println(firmwareURL);
+  otaStatus = "Connecting to GitHub";
 
   if (!http.begin(client, firmwareURL)) {
+    otaStatus = "HTTP begin failed";
     Serial.println("HTTP begin failed");
     return;
   }
@@ -111,9 +165,10 @@ void updateFromGitHub() {
   http.addHeader("User-Agent", "ESP32");
 
   int httpCode = http.GET();
-  Serial.printf("HTTP Code: %d\n", httpCode);
+  Serial.printf("Firmware HTTP Code: %d\n", httpCode);
 
   if (httpCode != HTTP_CODE_OK) {
+    otaStatus = "Failed to download firmware";
     Serial.println("Failed to download firmware");
     http.end();
     return;
@@ -123,12 +178,14 @@ void updateFromGitHub() {
   Serial.printf("Firmware size: %d bytes\n", contentLength);
 
   if (contentLength <= 0) {
+    otaStatus = "Invalid firmware size";
     Serial.println("Invalid firmware size");
     http.end();
     return;
   }
 
   if (!Update.begin(contentLength, U_FLASH)) {
+    otaStatus = "Not enough space for OTA";
     Serial.println("Not enough space for OTA");
     Update.printError(Serial);
     http.end();
@@ -141,6 +198,7 @@ void updateFromGitHub() {
   int totalWritten = 0;
   unsigned long lastDataTime = millis();
 
+  otaStatus = "Writing firmware";
   Serial.println("Starting firmware write...");
 
   while (http.connected() && totalWritten < contentLength) {
@@ -151,6 +209,7 @@ void updateFromGitHub() {
       int writtenBytes = Update.write(buff, readBytes);
 
       if (writtenBytes != readBytes) {
+        otaStatus = "Write error";
         Serial.println("Write error!");
         Update.printError(Serial);
         Update.abort();
@@ -160,11 +219,13 @@ void updateFromGitHub() {
 
       totalWritten += writtenBytes;
       lastDataTime = millis();
+      otaProgress = (totalWritten * 100) / contentLength;
 
-      Serial.printf("Progress: %d / %d bytes\n", totalWritten, contentLength);
+      Serial.printf("Progress: %d / %d bytes (%d%%)\n", totalWritten, contentLength, otaProgress);
     }
 
     if (millis() - lastDataTime > 30000) {
+      otaStatus = "Download timeout";
       Serial.println("Download timeout!");
       Update.abort();
       http.end();
@@ -177,14 +238,15 @@ void updateFromGitHub() {
   Serial.printf("Written: %d bytes\n", totalWritten);
 
   if (totalWritten != contentLength) {
+    otaStatus = "Firmware write incomplete";
     Serial.println("Firmware write incomplete");
-    Update.printError(Serial);
     Update.abort();
     http.end();
     return;
   }
 
   if (!Update.end()) {
+    otaStatus = "Update failed";
     Serial.println("Update failed");
     Update.printError(Serial);
     http.end();
@@ -192,15 +254,28 @@ void updateFromGitHub() {
   }
 
   if (!Update.isFinished()) {
+    otaStatus = "Update not finished";
     Serial.println("Update not finished");
     http.end();
     return;
   }
 
+  otaProgress = 100;
+  otaStatus = "OTA successful. Rebooting";
   Serial.println("GitHub OTA successful. Rebooting...");
+
   http.end();
-  delay(1000);
+  delay(2000);
   ESP.restart();
+}
+
+void checkVersionAndUpdate() {
+  otaStatus = "Checking version";
+  otaProgress = 0;
+
+  if (isNewVersionAvailable()) {
+    updateFromGitHub();
+  }
 }
 
 void setup(void) {
@@ -240,51 +315,28 @@ void setup(void) {
     server.send(200, "text/html", serverIndex);
   });
 
-  server.on("/githubUpdate", HTTP_GET, []() {
-    server.send(200, "text/plain", "Starting GitHub OTA update. Check Serial Monitor.");
-    delay(500);
-    updateFromGitHub();
+  server.on("/otaStatus", HTTP_GET, []() {
+    String json = "{";
+    json += "\"status\":\"" + otaStatus + "\",";
+    json += "\"progress\":" + String(otaProgress) + ",";
+    json += "\"version\":\"" + String(currentVersion) + "\"";
+    json += "}";
+
+    server.send(200, "application/json", json);
   });
 
-  server.on("/update", HTTP_POST, []() {
-    server.sendHeader("Connection", "close");
-
-    if (Update.hasError()) {
-      server.send(200, "text/plain", "FAIL");
-    } else {
-      server.send(200, "text/plain", "OK");
-      delay(1000);
-      ESP.restart();
-    }
-  }, []() {
-    HTTPUpload& upload = server.upload();
-
-    if (upload.status == UPLOAD_FILE_START) {
-      Serial.printf("Manual OTA Start: %s\n", upload.filename.c_str());
-
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-        Update.printError(Serial);
-      }
-
-    } else if (upload.status == UPLOAD_FILE_WRITE) {
-      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-        Update.printError(Serial);
-      }
-
-    } else if (upload.status == UPLOAD_FILE_END) {
-      if (Update.end(true)) {
-        Serial.printf("Manual OTA Success: %u bytes\n", upload.totalSize);
-      } else {
-        Update.printError(Serial);
-      }
-
-    } else if (upload.status == UPLOAD_FILE_ABORTED) {
-      Update.end();
-      Serial.println("Manual OTA Aborted");
-    }
+  server.on("/githubUpdate", HTTP_GET, []() {
+    server.send(200, "text/plain", "Checking version...");
+    delay(500);
+    checkVersionAndUpdate();
   });
 
   server.begin();
+
+  delay(3000);
+
+  // AUTO UPDATE ON BOOT
+  checkVersionAndUpdate();
 }
 
 void loop(void) {
