@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.0.2";
+const char* currentVersion = "1.0.3";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
@@ -22,15 +22,6 @@ unsigned long previousMillis = 0;
 const long interval = 4000;
 int ledState = LOW;
 
-enum LedMode {
-  LED_IDLE,
-  LED_CHECKING,
-  LED_UPDATING,
-  LED_SUCCESS,
-  LED_ERROR
-};
-
-LedMode ledMode = LED_IDLE;
 
 WebServer server(80);
 
@@ -288,39 +279,6 @@ void checkVersionAndUpdate() {
   }
 }
 
-void handleLED() {
-  static unsigned long lastToggle = 0;
-  static bool state = false;
-  unsigned long blinkInterval = 1000;
-
-  switch (ledMode) {
-    case LED_IDLE:
-      blinkInterval = 1000;
-      break;
-
-    case LED_CHECKING:
-      blinkInterval = 500;
-      break;
-
-    case LED_UPDATING:
-      blinkInterval = 100;
-      break;
-
-    case LED_ERROR:
-      blinkInterval = 50;
-      break;
-
-    case LED_SUCCESS:
-      digitalWrite(led, HIGH);
-      return;
-  }
-
-  if (millis() - lastToggle >= blinkInterval) {
-    lastToggle = millis();
-    state = !state;
-    digitalWrite(led, state);
-  }
-}
 
 void setup(void) {
   pinMode(led, OUTPUT);
@@ -384,8 +342,7 @@ void setup(void) {
 }
 
 void loop(void) {
-  server.handleClient();
-  delay(1);
+ server.handleClient();  // keep OTA/web server working
 
   unsigned long currentMillis = millis();
 
@@ -394,4 +351,7 @@ void loop(void) {
     ledState = !ledState;
     digitalWrite(led, ledState);
   }
+
+  delay(1);
+
 }
