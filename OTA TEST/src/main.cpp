@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.0.3";
+const char* currentVersion = "1.0.5";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
@@ -341,17 +341,19 @@ void setup(void) {
  // checkVersionAndUpdate();
 }
 
+void blinkLED() {
+  
+    digitalWrite(led,HIGH);
+    delay(1000);
+    digitalWrite(led,LOW); 
+    delay(1000);
+  
+}
+
+
 void loop(void) {
  server.handleClient();  // keep OTA/web server working
-
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
-    ledState = !ledState;
-    digitalWrite(led, ledState);
-  }
-
-  delay(1);
-
+ blinkLED(); // blink LED to show it's alive
+ delay(1);
 }
+
