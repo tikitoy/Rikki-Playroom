@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.0.7";
+const char* currentVersion = "1.0.8";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
@@ -21,6 +21,8 @@ const int led = 2;
 unsigned long previousMillis = 0;
 const long interval = 4000;
 int ledState = LOW;
+
+bool ledManualMode = false;
 
 
 WebServer server(80);
@@ -48,6 +50,14 @@ const char* loginIndex =
 "</script>";
 
 const char* serverIndex =
+
+"<hr>"
+"<h3>LED Control</h3>"
+"<button onclick=\"fetch('/ledOn')\">LED ON</button>"
+"<button onclick=\"fetch('/ledOff')\">LED OFF</button>"
+"<button onclick=\"fetch('/ledBlink')\">LED BLINK</button>"
+
+
 "<h2>ESP32 OTA Update</h2>"
 "<p>Current version: <b id='ver'>Loading...</b></p>"
 
@@ -335,6 +345,23 @@ void setup(void) {
     delay(500);
     checkVersionAndUpdate();
   });
+  
+  server.on("/ledOn", HTTP_GET, []() {
+  ledManualMode = true;
+  digitalWrite(led, HIGH);
+  server.send(200, "text/plain", "LED ON");
+});
+
+server.on("/ledOff", HTTP_GET, []() {
+  ledManualMode = true;
+  digitalWrite(led, LOW);
+  server.send(200, "text/plain", "LED OFF");
+});
+
+server.on("/ledBlink", HTTP_GET, []() {
+  ledManualMode = false;
+  server.send(200, "text/plain", "LED BLINK");
+});
 
   server.begin();
 
@@ -345,12 +372,15 @@ void setup(void) {
 }
 
 void blinkLED() {
-  
-    digitalWrite(led,HIGH);
-    delay(1000);
-    digitalWrite(led,LOW); 
-    delay(1000);
-  
+  if (ledManualMode) return;
+
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    ledState = !ledState;
+    digitalWrite(led, ledState);
+  }
 }
 
 
