@@ -7,11 +7,8 @@
 #include <HTTPClient.h>
 
 const char* host = "esp32";
-//const char* ssid = "Xiaomi 15T Pro";
-//const char* password = "ctxtmjtm95vdwkm";
-
-const char* ssid = "IngoGuest";
-const char* password = "Ingo@56789";
+const char* ssid = "Xiaomi 15T Pro";
+const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
 const char* currentVersion = "1.0.0";
