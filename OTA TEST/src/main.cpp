@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.0.5";
+const char* currentVersion = "1.0.6";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
@@ -203,37 +203,40 @@ void updateFromGitHub() {
   Serial.println("Starting firmware write...");
 
   while (http.connected() && totalWritten < contentLength) {
-    size_t available = stream->available();
+  server.handleClient();  // allow webpage to update progress
 
-    if (available) {
-      int readBytes = stream->readBytes(buff, min((int)available, 1024));
-      int writtenBytes = Update.write(buff, readBytes);
+  size_t available = stream->available();
 
-      if (writtenBytes != readBytes) {
-        otaStatus = "Write error";
-        Serial.println("Write error!");
-        Update.printError(Serial);
-        Update.abort();
-        http.end();
-        return;
-      }
+  if (available) {
+    int readBytes = stream->readBytes(buff, min((int)available, 1024));
+    int writtenBytes = Update.write(buff, readBytes);
 
-      totalWritten += writtenBytes;
-      lastDataTime = millis();
-      otaProgress = (totalWritten * 100) / contentLength;
-
-      Serial.printf("Progress: %d / %d bytes (%d%%)\n", totalWritten, contentLength, otaProgress);
-    }
-
-    if (millis() - lastDataTime > 30000) {
-      otaStatus = "Download timeout";
-      Serial.println("Download timeout!");
+    if (writtenBytes != readBytes) {
+      otaStatus = "Write error";
+      Serial.println("Write error!");
+      Update.printError(Serial);
       Update.abort();
       http.end();
       return;
     }
 
-    delay(1);
+    totalWritten += writtenBytes;
+    lastDataTime = millis();
+    otaProgress = (totalWritten * 100) / contentLength;
+
+    Serial.printf("Progress: %d / %d bytes (%d%%)\n", totalWritten, contentLength, otaProgress);
+  }
+
+  if (millis() - lastDataTime > 30000) {
+    otaStatus = "Download timeout";
+    Serial.println("Download timeout!");
+    Update.abort();
+    http.end();
+    return;
+  }
+
+  delay(1);
+
   }
 
   Serial.printf("Written: %d bytes\n", totalWritten);
