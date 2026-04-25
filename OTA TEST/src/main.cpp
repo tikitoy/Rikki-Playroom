@@ -11,7 +11,7 @@ const char* ssid = "Xiaomi 15T Pro";
 const char* password = "ctxtmjtm95vdwkm";
 
 // CHANGE THIS VERSION EVERY NEW FIRMWARE BUILD
-const char* currentVersion = "1.0.8";
+const char* currentVersion = "1.0.9";
 
 // GitHub raw files
 const char* firmwareURL = "https://raw.githubusercontent.com/tikitoy/Rikki-Playroom/main/firmware.bin";
@@ -24,11 +24,13 @@ int ledState = LOW;
 
 bool ledManualMode = false;
 
-
 WebServer server(80);
 
 String otaStatus = "Idle";
 int otaProgress = 0;
+
+String latestVersionGlobal = "Unknown";
+bool updateAvailableGlobal = false;
 
 const char* loginIndex =
 "<form name='loginForm'>"
@@ -50,18 +52,20 @@ const char* loginIndex =
 "</script>";
 
 const char* serverIndex =
+"<h2>ESP32 Control Panel</h2>"
 
 "<hr>"
 "<h3>LED Control</h3>"
-"<button onclick=\"fetch('/ledOn')\">LED ON</button>"
-"<button onclick=\"fetch('/ledOff')\">LED OFF</button>"
+"<button onclick=\"fetch('/ledOn')\">LED ON</button> "
+"<button onclick=\"fetch('/ledOff')\">LED OFF</button> "
 "<button onclick=\"fetch('/ledBlink')\">LED BLINK</button>"
 
+"<hr>"
+"<h3>ESP32 OTA Update</h3>"
+"<p>Current version: <b id='currentVer'>Loading...</b></p>"
+"<p>Latest version: <b id='latestVer'>Loading...</b></p>"
+"<p>Update: <b id='updateBadge'>Checking...</b></p>"
 
-"<h2>ESP32 OTA Update</h2>"
-"<p>Current version: <b id='ver'>Loading...</b></p>"
-
-"<h3>GitHub OTA Update</h3>"
 "<button onclick='startOTA()'>Check Version and Update</button>"
 "<p>Status: <b id='status'>Idle</b></p>"
 "<p>Progress: <b id='progress'>0%</b></p>"
@@ -73,14 +77,20 @@ const char* serverIndex =
 "document.getElementById('status').innerHTML=d.status;"
 "document.getElementById('progress').innerHTML=d.progress + '%';"
 "document.getElementById('bar').value=d.progress;"
-"document.getElementById('ver').innerHTML=d.version;"
+"document.getElementById('currentVer').innerHTML=d.current;"
+"document.getElementById('latestVer').innerHTML=d.latest;"
+"document.getElementById('updateBadge').innerHTML=d.updateAvailable ? 'AVAILABLE' : 'UP TO DATE';"
+"}).catch(e=>{"
+"document.getElementById('status').innerHTML='Status fetch failed';"
 "});"
 "}"
+
 "function startOTA(){"
 "fetch('/githubUpdate').then(r=>r.text()).then(t=>{"
 "document.getElementById('status').innerHTML=t;"
 "});"
 "}"
+
 "setInterval(refreshStatus,1000);"
 "refreshStatus();"
 "</script>";
@@ -124,9 +134,11 @@ String getLatestVersion() {
 
 bool isNewVersionAvailable() {
   String latestVersion = getLatestVersion();
+  latestVersionGlobal = latestVersion;
 
   if (latestVersion == "") {
     otaStatus = "Failed to check version";
+    updateAvailableGlobal = false;
     return false;
   }
 
@@ -137,10 +149,12 @@ bool isNewVersionAvailable() {
 
   if (latestVersion != String(currentVersion)) {
     otaStatus = "New version found: " + latestVersion;
+    updateAvailableGlobal = true;
     return true;
   }
 
   otaStatus = "Already latest version";
+  updateAvailableGlobal = false;
   return false;
 }
 
@@ -213,40 +227,39 @@ void updateFromGitHub() {
   Serial.println("Starting firmware write...");
 
   while (http.connected() && totalWritten < contentLength) {
-  server.handleClient();  // allow webpage to update progress
+    server.handleClient();
 
-  size_t available = stream->available();
+    size_t available = stream->available();
 
-  if (available) {
-    int readBytes = stream->readBytes(buff, min((int)available, 1024));
-    int writtenBytes = Update.write(buff, readBytes);
+    if (available) {
+      int readBytes = stream->readBytes(buff, min((int)available, 1024));
+      int writtenBytes = Update.write(buff, readBytes);
 
-    if (writtenBytes != readBytes) {
-      otaStatus = "Write error";
-      Serial.println("Write error!");
-      Update.printError(Serial);
+      if (writtenBytes != readBytes) {
+        otaStatus = "Write error";
+        Serial.println("Write error!");
+        Update.printError(Serial);
+        Update.abort();
+        http.end();
+        return;
+      }
+
+      totalWritten += writtenBytes;
+      lastDataTime = millis();
+      otaProgress = (totalWritten * 100) / contentLength;
+
+      Serial.printf("Progress: %d / %d bytes (%d%%)\n", totalWritten, contentLength, otaProgress);
+    }
+
+    if (millis() - lastDataTime > 30000) {
+      otaStatus = "Download timeout";
+      Serial.println("Download timeout!");
       Update.abort();
       http.end();
       return;
     }
 
-    totalWritten += writtenBytes;
-    lastDataTime = millis();
-    otaProgress = (totalWritten * 100) / contentLength;
-
-    Serial.printf("Progress: %d / %d bytes (%d%%)\n", totalWritten, contentLength, otaProgress);
-  }
-
-  if (millis() - lastDataTime > 30000) {
-    otaStatus = "Download timeout";
-    Serial.println("Download timeout!");
-    Update.abort();
-    http.end();
-    return;
-  }
-
-  delay(1);
-
+    delay(1);
   }
 
   Serial.printf("Written: %d bytes\n", totalWritten);
@@ -292,6 +305,17 @@ void checkVersionAndUpdate() {
   }
 }
 
+void blinkLED() {
+  if (ledManualMode) return;
+
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    ledState = !ledState;
+    digitalWrite(led, ledState);
+  }
+}
 
 void setup(void) {
   pinMode(led, OUTPUT);
@@ -320,6 +344,15 @@ void setup(void) {
 
   Serial.println("mDNS responder started");
 
+  // Initial version check for webpage display only
+  latestVersionGlobal = getLatestVersion();
+  if (latestVersionGlobal == "") {
+    latestVersionGlobal = "Unknown";
+    updateAvailableGlobal = false;
+  } else {
+    updateAvailableGlobal = latestVersionGlobal != String(currentVersion);
+  }
+
   server.on("/", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
     server.send(200, "text/html", loginIndex);
@@ -334,7 +367,9 @@ void setup(void) {
     String json = "{";
     json += "\"status\":\"" + otaStatus + "\",";
     json += "\"progress\":" + String(otaProgress) + ",";
-    json += "\"version\":\"" + String(currentVersion) + "\"";
+    json += "\"current\":\"" + String(currentVersion) + "\",";
+    json += "\"latest\":\"" + latestVersionGlobal + "\",";
+    json += "\"updateAvailable\":" + String(updateAvailableGlobal ? "true" : "false");
     json += "}";
 
     server.send(200, "application/json", json);
@@ -345,48 +380,34 @@ void setup(void) {
     delay(500);
     checkVersionAndUpdate();
   });
-  
+
   server.on("/ledOn", HTTP_GET, []() {
-  ledManualMode = true;
-  digitalWrite(led, HIGH);
-  server.send(200, "text/plain", "LED ON");
-});
+    ledManualMode = true;
+    digitalWrite(led, HIGH);
+    server.send(200, "text/plain", "LED ON");
+  });
 
-server.on("/ledOff", HTTP_GET, []() {
-  ledManualMode = true;
-  digitalWrite(led, LOW);
-  server.send(200, "text/plain", "LED OFF");
-});
+  server.on("/ledOff", HTTP_GET, []() {
+    ledManualMode = true;
+    digitalWrite(led, LOW);
+    server.send(200, "text/plain", "LED OFF");
+  });
 
-server.on("/ledBlink", HTTP_GET, []() {
-  ledManualMode = false;
-  server.send(200, "text/plain", "LED BLINK");
-});
+  server.on("/ledBlink", HTTP_GET, []() {
+    ledManualMode = false;
+    server.send(200, "text/plain", "LED BLINK");
+  });
 
   server.begin();
 
   delay(3000);
 
-  // AUTO UPDATE ON BOOT
- // checkVersionAndUpdate();
+  // Optional auto update on boot:
+  // checkVersionAndUpdate();
 }
-
-void blinkLED() {
-  if (ledManualMode) return;
-
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
-    ledState = !ledState;
-    digitalWrite(led, ledState);
-  }
-}
-
 
 void loop(void) {
- server.handleClient();  // keep OTA/web server working
- blinkLED(); // blink LED to show it's alive
- delay(1);
+  server.handleClient();
+  blinkLED();
+  delay(1);
 }
-
